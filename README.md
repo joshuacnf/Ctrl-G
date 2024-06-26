@@ -2,9 +2,9 @@
 
 This repository hosts the code for the **Ctrl-G** framework proposed in the paper [_Adaptable Logical Control for Large Language Models_](https://arxiv.org/abs/2406.13892). Ctrl-G combines any production-ready LLM with a Hidden Markov Model (HMM), enabling LLM outputs to adhere to logical constraints represented as deterministic finite automata (DFAs).
 
-<div style="text-align:center">
+<p align="center">
 <img src="https://web.cs.ucla.edu/~hzhang19/files/ctrlg_figures/teaser_figure.png" width="350"/>
-</div>
+</p>
 
 With this codebase, users can impose logical constraints on LLM outputs and implement functionalities including (but not limited to):
 
