@@ -24,7 +24,7 @@ We recommend using `conda` for setting up the environment for Ctrl-G.
 1. `conda activate ctrlg`
 1. `conda install pytorch torchvision torchaudio pytorch-cuda=12.1 -c pytorch -c nvidia`
 1. `conda install -c pytorch -c nvidia faiss-gpu=1.8.0` #only required for HMM distillation
-1. `pip install transformers==4.41.2 huggingface_hub==0.23.4 notebook ipywidgets`
+1. `pip install transformers==4.41.2 huggingface_hub==0.23.4 sentencepiece notebook ipywidgets`
 1. `pip install -e .` # installing ctrlg locally
 
 ## Released checkpoints
