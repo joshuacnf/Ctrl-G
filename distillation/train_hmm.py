@@ -13,7 +13,7 @@ from ctrlg import HMM
 def apply_dropout(input_ids, dropout, vocab_size, eos_token_id):
     n, d = input_ids.shape
     input_ids[torch.rand(n, device=input_ids.device) < dropout, -1] = eos_token_id
-    input_ids[torch.logical_and(torch.rand(n, d, device=input_ids.device) < dropout, input_ids != eos_token_id)] = vocab_size
+    input_ids[torch.logical_and(torch.rand(n, d, device=input_ids.device) < dropout, input_ids != eos_token_id)] = -1
     return input_ids
 
 
@@ -56,6 +56,8 @@ def train_hmm(rank, world_size,
             # get train_data for current process
             num_per_process = train_step.shape[0] // world_size + 1
             train_data = train_step[rank * num_per_process: min(train_step.shape[0], (rank+1) * num_per_process)]
+            train_data_eval = train_data[:dev_data.shape[0]].clone()
+            train_data = apply_dropout(train_data, dropout, vocab_size, eos_token_id)
 
             # compute flows for one em step
             alpha_flow = torch.zeros(hidden_states, hidden_states, device=device)
@@ -66,7 +68,6 @@ def train_hmm(rank, world_size,
                 for batch_idx in tqdm(range(0, train_data.shape[0], batch_size)):
                     batch_size_ = min(batch_size, train_data.shape[0] - batch_idx)
                     train_data_batch = train_data[batch_idx: batch_idx + batch_size_].to(device)
-                    train_data_batch = apply_dropout(train_data_batch, dropout, vocab_size, eos_token_id)
 
                     probs = hmm_model.forward(train_data_batch)
                     hmm_model.backward(train_data_batch, probs,
@@ -90,7 +91,7 @@ def train_hmm(rank, world_size,
                 hmm_model.update_params(alpha_flow, beta_flow, gamma_flow)
 
                 # evaluate ll
-                train_ll = hmm_model.loglikelihood(train_data[:dev_data.shape[0]], batch_size)
+                train_ll = hmm_model.loglikelihood(train_data_eval, batch_size)
                 dev_ll = hmm_model.loglikelihood(dev_data, batch_size)
 
             torch.distributed.all_reduce(train_ll, op=dist.ReduceOp.SUM)
@@ -109,6 +110,8 @@ def train_hmm(rank, world_size,
                     hmm_model.save_pretrained(f'{model_path}/checkpoint-{ckpt}')
 
             step_offset += step_size
+
+            torch.cuda.empty_cache()
 
 
 if __name__ == '__main__':
@@ -131,12 +134,13 @@ if __name__ == '__main__':
 
     args = arg_parser.parse_args()
 
-    with open(args.log_file, 'a+') as fout:
-        fout.write(str(vars(args)) + '\n')
-
     dist.init_process_group('nccl')
     rank = int(os.environ["LOCAL_RANK"])
     world_size = int(os.environ["WORLD_SIZE"])
+
+    if rank == 0:
+        with open(args.log_file, 'a+') as fout:
+            fout.write(str(vars(args)) + '\n')
 
     em_schedule = [tuple([int(y) for y in x.split(',')]) for x in args.em_schedule.split(';') if x != '']
 

@@ -51,12 +51,11 @@ class HMM(nn.Module, PyTorchModelHubMixin):
         hidden_states, vocab_size, eos_token_id = self.hidden_states, self.vocab_size, self.eos_token_id
         batch_size, seq_len = input_ids.shape
 
-        beta = torch.cat((beta, torch.zeros(hidden_states, 1, device=device)), dim=1) # augment for MISSING token
-
         input_ids_ = torch.permute(input_ids, (1, 0)).contiguous()
         input_probs = beta[
             torch.arange(0, hidden_states, device=device)[None, :, None],
-            input_ids_[:, None, :]].contiguous() # seq_len * hidden_states * batch_size
+            input_ids_[:, None, :]].contiguous() # seq_len * hidden_states * batch_size        
+        input_probs *= (input_ids_ != -1)[:, None, :].expand(-1, hidden_states, -1) # 0.0 for MISSING token
 
         ys = []
         y = torch.zeros((hidden_states, batch_size), device=device)
@@ -86,14 +85,13 @@ class HMM(nn.Module, PyTorchModelHubMixin):
         alpha_exp, beta, gamma_exp = self.alpha_exp, self.beta, torch.softmax(self.gamma, dim=0)
         hidden_states, vocab_size, eos_token_id = self.hidden_states, self.vocab_size, self.eos_token_id
         batch_size, seq_len = input_ids.shape
-        eps_cuda = torch.tensor([1e-7], device=device)
-
-        beta = torch.cat((beta, torch.zeros(hidden_states, 1, device=device)), dim=1) # augment for MISSING token
+        eps_cuda = torch.tensor([1e-7], device=device)        
 
         input_ids_ = torch.permute(input_ids, (1, 0)).contiguous() # seq_len * batch_size
         input_probs = beta[
             torch.arange(0, hidden_states, device=device)[None, :, None],
             input_ids_[:, None, :]].contiguous() # seq_len * hidden_states * batch_size
+        input_probs *= (input_ids_ != -1)[:, None, :].expand(-1, hidden_states, -1)
 
         flows = []
         pf = gamma_exp.unsqueeze(0) * torch.exp(
@@ -125,6 +123,7 @@ class HMM(nn.Module, PyTorchModelHubMixin):
 
         # update beta_flow
         flows = torch.stack(flows, dim=0) # seq_len * batch_size * hidden_states
+        input_ids_[input_ids_ == -1] = vocab_size
         input_ids_ = input_ids_[:, :, None].expand(-1, -1, hidden_states).view(seq_len * batch_size, hidden_states)
         beta_flow.scatter_add_(0, input_ids_, flows.view(seq_len * batch_size, hidden_states))
 
