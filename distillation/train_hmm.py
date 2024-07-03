@@ -124,7 +124,7 @@ if __name__ == '__main__':
     arg_parser.add_argument('--batch_size', default=32, type=int)
     arg_parser.add_argument('--sample_length', default=None, type=int)
     arg_parser.add_argument('--em_schedule', type=str)
-    arg_parser.add_argument('--dropout', default=0.01, type=float)
+    arg_parser.add_argument('--dropout', default=0.001, type=float)
     arg_parser.add_argument('--pseudocount', default=0.0, type=float)
 
     arg_parser.add_argument('--log_file', default='', type=str)
