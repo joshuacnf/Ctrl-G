@@ -12,7 +12,7 @@ from ctrlg import HMM
 
 def apply_dropout(input_ids, dropout, vocab_size, eos_token_id):
     n, d = input_ids.shape
-    input_ids[torch.rand(n, device=input_ids.device) < dropout, -1] = eos_token_id    
+    input_ids[torch.rand(n, device=input_ids.device) < dropout, -1] = eos_token_id
     input_ids[torch.logical_and(torch.rand(n, d, device=input_ids.device) < dropout, input_ids != eos_token_id)] = vocab_size
     return input_ids
 
@@ -24,7 +24,7 @@ def train_hmm(rank, world_size,
 
     device = f'cuda:{rank}'
 
-    hmm_model = HMM.from_pretrained(f'{model_path}/checkpoint-{checkpoint}', map_location=device)
+    hmm_model = HMM.from_pretrained(f'{model_path}/checkpoint-{checkpoint}', map_location='cpu').to(device)
     hidden_states, vocab_size, eos_token_id = hmm_model.hidden_states, hmm_model.vocab_size, hmm_model.eos_token_id
 
     dev_data = torch.load(f'{args.data_path}/{dataset}.dev')[:, :sample_length]
@@ -32,11 +32,11 @@ def train_hmm(rank, world_size,
     num_per_process = dev_data.shape[0] // world_size + 1
     dev_data = dev_data[rank * num_per_process: min(dev_data.shape[0], (rank+1) * num_per_process)]
 
-    for step_size, _ in em_schedule:
+    for _, step_size in em_schedule:
         assert step_size <= total_chunks
 
     step_offset = checkpoint
-    for step_size, step_count in em_schedule:
+    for step_count, step_size in em_schedule:
         for step_idx in range(0, step_count):
             # evaluate ll
             if step_offset == checkpoint:
@@ -52,7 +52,7 @@ def train_hmm(rank, world_size,
             # get train_step for current step
             train_step = torch.cat([torch.load(f'{data_path}/{dataset}.train.{idx % total_chunks}')
                 for idx in range(step_offset, step_offset+step_size)], dim=0)
-            
+
             # get train_data for current process
             num_per_process = train_step.shape[0] // world_size + 1
             train_data = train_step[rank * num_per_process: min(train_step.shape[0], (rank+1) * num_per_process)]
@@ -79,19 +79,19 @@ def train_hmm(rank, world_size,
             torch.distributed.all_reduce(beta_flow, op=dist.ReduceOp.SUM)
             torch.distributed.all_reduce(gamma_flow, op=dist.ReduceOp.SUM)
 
-            # flow to params
-            alpha_flow += pseudocount / alpha_flow.shape[-1]
-            beta_flow += pseudocount / beta_flow.shape[-1]
-            gamma_flow += pseudocount / gamma_flow.shape[-1]
-            alpha_exp = alpha_flow / torch.sum(alpha_flow, dim=-1, keepdim=True)
-            beta = torch.log(beta_flow / torch.sum(beta_flow, dim=-1, keepdim=True))
-            gamma = torch.log(gamma_flow / torch.sum(gamma_flow, dim=0, keepdim=True))
+            with torch.no_grad():
+                # flow to params; in-place to reduce memory consumption
+                alpha_flow += pseudocount / alpha_flow.shape[-1]
+                beta_flow += pseudocount / beta_flow.shape[-1]
+                gamma_flow += pseudocount / gamma_flow.shape[-1]
+                alpha_flow.div_(torch.sum(alpha_flow, dim=-1, keepdim=True))
+                beta_flow.div_(torch.sum(beta_flow, dim=-1, keepdim=True)).log_()
+                gamma_flow.div_(torch.sum(gamma_flow, dim=0, keepdim=True)).log_()
+                hmm_model.update_params(alpha_flow, beta_flow, gamma_flow)
 
-            hmm_model.update_params(alpha_exp, beta, gamma)
-
-            # evaluate ll
-            train_ll = hmm_model.loglikelihood(train_data[:dev_data.shape[0]], batch_size)
-            dev_ll = hmm_model.loglikelihood(dev_data, batch_size)
+                # evaluate ll
+                train_ll = hmm_model.loglikelihood(train_data[:dev_data.shape[0]], batch_size)
+                dev_ll = hmm_model.loglikelihood(dev_data, batch_size)
 
             torch.distributed.all_reduce(train_ll, op=dist.ReduceOp.SUM)
             torch.distributed.all_reduce(dev_ll, op=dist.ReduceOp.SUM)

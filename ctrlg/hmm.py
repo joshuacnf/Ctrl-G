@@ -86,6 +86,7 @@ class HMM(nn.Module, PyTorchModelHubMixin):
         alpha_exp, beta, gamma_exp = self.alpha_exp, self.beta, torch.softmax(self.gamma, dim=0)
         hidden_states, vocab_size, eos_token_id = self.hidden_states, self.vocab_size, self.eos_token_id
         batch_size, seq_len = input_ids.shape
+        eps_cuda = torch.tensor([1e-7], device=device)
 
         beta = torch.cat((beta, torch.zeros(hidden_states, 1, device=device)), dim=1) # augment for MISSING token
 
@@ -131,6 +132,7 @@ class HMM(nn.Module, PyTorchModelHubMixin):
         missing_flow = beta_flow[vocab_size, :] / (vocab_size-1)
         beta_flow.add_(missing_flow[None, :])
         beta_flow[eos_token_id, :] -= missing_flow
+        beta_flow[eos_token_id, :] = torch.maximum(beta_flow[eos_token_id, :], eps_cuda)
 
 
     def loglikelihood(self, input_ids, batch_size):
