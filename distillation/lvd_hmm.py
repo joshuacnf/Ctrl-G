@@ -100,7 +100,7 @@ def write_params(alpha_flow, beta_flow, gamma_flow, pseudocount,
     gamma = torch.log(gamma_flow / torch.sum(gamma_flow, dim=0, keepdim=True))
 
     hmm_model = HMM(hidden_states, vocab_size, eos_token_id)
-    hmm_model.update_params(alpha_exp, beta, gamma, pseudocount)
+    hmm_model.update_params(alpha_exp, beta, gamma)
 
     hmm_model.save_pretrained(output_file)
 

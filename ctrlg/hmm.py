@@ -48,9 +48,10 @@ class HMM(nn.Module, PyTorchModelHubMixin):
     def forward(self, input_ids):
         device = self.alpha_exp.device
         alpha_exp, beta, gamma_exp = self.alpha_exp, self.beta, torch.softmax(self.gamma, dim=0)
-        hidden_states, vocab_size = self.hidden_states, self.vocab_size
-
+        hidden_states, vocab_size, eos_token_id = self.hidden_states, self.vocab_size, self.eos_token_id
         batch_size, seq_len = input_ids.shape
+
+        beta = torch.cat((beta, torch.zeros(hidden_states, 1, device=device)), dim=1) # augment for MISSING token
 
         input_ids_ = torch.permute(input_ids, (1, 0)).contiguous()
         input_probs = beta[
@@ -83,9 +84,10 @@ class HMM(nn.Module, PyTorchModelHubMixin):
         alpha_flow, beta_flow, gamma_flow):
         device = self.alpha_exp.device
         alpha_exp, beta, gamma_exp = self.alpha_exp, self.beta, torch.softmax(self.gamma, dim=0)
-        hidden_states, vocab_size = self.hidden_states, self.vocab_size
-
+        hidden_states, vocab_size, eos_token_id = self.hidden_states, self.vocab_size, self.eos_token_id
         batch_size, seq_len = input_ids.shape
+
+        beta = torch.cat((beta, torch.zeros(hidden_states, 1, device=device)), dim=1) # augment for MISSING token
 
         input_ids_ = torch.permute(input_ids, (1, 0)).contiguous() # seq_len * batch_size
         input_probs = beta[
@@ -125,16 +127,21 @@ class HMM(nn.Module, PyTorchModelHubMixin):
         input_ids_ = input_ids_[:, :, None].expand(-1, -1, hidden_states).view(seq_len * batch_size, hidden_states)
         beta_flow.scatter_add_(0, input_ids_, flows.view(seq_len * batch_size, hidden_states))
 
+        # handle MISSING token
+        missing_flow = beta_flow[vocab_size, :] / (vocab_size-1)
+        beta_flow.add_(missing_flow[None, :])
+        beta_flow[eos_token_id, :] -= missing_flow
 
-def loglikelihood(hmm_model, input_ids, batch_size):
-    device = hmm_model.alpha_exp.device
-    data_size, seq_len = input_ids.shape
 
-    ll = torch.tensor([0.0], device=device)
-    for batch_idx in range(0, data_size, batch_size):
-        batch_size_ = min(batch_size, data_size - batch_idx)
-        input_ids_batch = input_ids[batch_idx: batch_idx + batch_size_].to(device)
-        probs_ = hmm_model.forward(input_ids_batch)
-        ll += torch.sum(probs_[-1])
+    def loglikelihood(self, input_ids, batch_size):
+        device = self.alpha_exp.device
+        data_size, seq_len = input_ids.shape
 
-    return ll
+        ll = torch.tensor([0.0], device=device)
+        for batch_idx in range(0, data_size, batch_size):
+            batch_size_ = min(batch_size, data_size - batch_idx)
+            input_ids_batch = input_ids[batch_idx: batch_idx + batch_size_].to(device)
+            probs_ = self.forward(input_ids_batch)
+            ll += torch.sum(probs_[-1])
+
+        return ll

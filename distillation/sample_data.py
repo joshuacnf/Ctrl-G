@@ -26,7 +26,8 @@ if __name__ == '__main__':
     arg_parser.add_argument('--model_name_or_path', default='', type=str)
     arg_parser.add_argument('--tokenizer_name_or_path', default='', type=str)
     arg_parser.add_argument('--cache_prompt_past_key_values', action='store_true')
-    arg_parser.add_argument('--half', action='store_true')
+    arg_parser.add_argument('--float16', action='store_true')
+    arg_parser.add_argument('--bfloat16', action='store_true')
 
     arg_parser.add_argument('--input_file',  default='', type=str)
     arg_parser.add_argument('--chunk_size', default=32, type=int)
@@ -35,9 +36,15 @@ if __name__ == '__main__':
     arg_parser.add_argument('--max_new_tokens', type=int, default=128)
     arg_parser.add_argument('--save_embeddings', action='store_true')
 
+    arg_parser.add_argument('--top_k', type=int, default=0)
+    arg_parser.add_argument('--top_p', type=float, default=1.0)
+    arg_parser.add_argument('--temperature', type=float, default=1.0)
+
     arg_parser.add_argument('--output_file',  default='', type=str)
 
     args = arg_parser.parse_args()
+
+    assert (args.float16 == True and args.bfloat16 == True) == False
 
     dist.init_process_group('gloo')
     rank = int(os.environ["LOCAL_RANK"])
@@ -47,7 +54,9 @@ if __name__ == '__main__':
 
     # load base model & tokenizer
     base_model = AutoModelForCausalLM.from_pretrained(args.model_name_or_path)
-    if args.half:
+    if args.float16:
+        base_model.float16()
+    if args.bfloat16:
         base_model.bfloat16()
     base_model.to(device)
     base_model.eval()
@@ -87,11 +96,18 @@ if __name__ == '__main__':
                     model_kwargs = {}
 
                 with torch.no_grad():
+                    generation_config = {
+                        'do_sample': True,
+                        'top_k': args.top_k,
+                        'top_p': args.top_p,
+                        'temperature': args.temperature,
+                    }
+
                     generation_output = base_model.generate(
-                        input_ids=torch.tensor([prompt_ids] * batch_size_, device=device),
-                        do_sample=True, top_k=0, pad_token_id=tokenizer.eos_token_id,
+                        input_ids=torch.tensor([prompt_ids] * batch_size_, device=device),                        
+                        pad_token_id=tokenizer.eos_token_id,
                         max_new_tokens=args.max_new_tokens, output_hidden_states=args.save_embeddings,
-                        return_dict_in_generate=True, **model_kwargs
+                        return_dict_in_generate=True, **model_kwargs, **generation_config,
                     )
                     sequences_batch = generation_output.sequences[:,len(prompt_ids):].cpu()
                     sequences_batch = pad_to_len(sequences_batch, args.max_new_tokens, tokenizer.eos_token_id)
