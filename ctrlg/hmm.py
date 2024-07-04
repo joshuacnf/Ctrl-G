@@ -54,7 +54,7 @@ class HMM(nn.Module, PyTorchModelHubMixin):
         input_ids_ = torch.permute(input_ids, (1, 0)).contiguous()
         input_probs = beta[
             torch.arange(0, hidden_states, device=device)[None, :, None],
-            input_ids_[:, None, :]].contiguous() # seq_len * hidden_states * batch_size        
+            input_ids_[:, None, :]].contiguous() # seq_len * hidden_states * batch_size
         input_probs *= (input_ids_ != -1)[:, None, :].expand(-1, hidden_states, -1) # 0.0 for MISSING token
 
         ys = []
@@ -85,7 +85,6 @@ class HMM(nn.Module, PyTorchModelHubMixin):
         alpha_exp, beta, gamma_exp = self.alpha_exp, self.beta, torch.softmax(self.gamma, dim=0)
         hidden_states, vocab_size, eos_token_id = self.hidden_states, self.vocab_size, self.eos_token_id
         batch_size, seq_len = input_ids.shape
-        eps_cuda = torch.tensor([1e-7], device=device)        
 
         input_ids_ = torch.permute(input_ids, (1, 0)).contiguous() # seq_len * batch_size
         input_probs = beta[
@@ -126,12 +125,6 @@ class HMM(nn.Module, PyTorchModelHubMixin):
         input_ids_[input_ids_ == -1] = vocab_size
         input_ids_ = input_ids_[:, :, None].expand(-1, -1, hidden_states).view(seq_len * batch_size, hidden_states)
         beta_flow.scatter_add_(0, input_ids_, flows.view(seq_len * batch_size, hidden_states))
-
-        # handle MISSING token
-        missing_flow = beta_flow[vocab_size, :] / (vocab_size-1)
-        beta_flow.add_(missing_flow[None, :])
-        beta_flow[eos_token_id, :] -= missing_flow
-        beta_flow[eos_token_id, :] = torch.maximum(beta_flow[eos_token_id, :], eps_cuda)
 
 
     def loglikelihood(self, input_ids, batch_size):

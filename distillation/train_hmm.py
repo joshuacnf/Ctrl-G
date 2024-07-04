@@ -26,6 +26,7 @@ def train_hmm(rank, world_size,
 
     hmm_model = HMM.from_pretrained(f'{model_path}/checkpoint-{checkpoint}', map_location='cpu').to(device)
     hidden_states, vocab_size, eos_token_id = hmm_model.hidden_states, hmm_model.vocab_size, hmm_model.eos_token_id
+    eps_cuda = torch.tensor([1e-7], device=device)
 
     dev_data = torch.load(f'{args.data_path}/{dataset}.dev')[:, :sample_length]
     dev_size = dev_data.shape[0]
@@ -74,6 +75,13 @@ def train_hmm(rank, world_size,
                         alpha_flow, beta_flow, gamma_flow)
 
                 alpha_flow.mul_(hmm_model.alpha_exp)
+
+                # distribute flow on the MISSING token
+                missing_flow = beta_flow[vocab_size, :] / (vocab_size-1)
+                beta_flow.add_(missing_flow[None, :])
+                beta_flow[eos_token_id, :] -= missing_flow
+                beta_flow[eos_token_id, :] = torch.maximum(beta_flow[eos_token_id, :], eps_cuda)
+
                 beta_flow = torch.permute(beta_flow[:-1, :], (1, 0)).contiguous() # hidden_states * vocab_size
 
             torch.distributed.all_reduce(alpha_flow, op=dist.ReduceOp.SUM)
@@ -128,7 +136,7 @@ if __name__ == '__main__':
     arg_parser.add_argument('--sample_length', default=None, type=int)
     arg_parser.add_argument('--em_schedule', type=str)
     arg_parser.add_argument('--dropout', default=0.001, type=float)
-    arg_parser.add_argument('--pseudocount', default=0.0, type=float)
+    arg_parser.add_argument('--pseudocount', default=0.001, type=float)
 
     arg_parser.add_argument('--log_file', default='', type=str)
 
