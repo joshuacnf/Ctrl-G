@@ -74,7 +74,7 @@ tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_PATH)
 hmm_model = ctrlg.HMM.from_pretrained(HMM_MODEL_PATH).to(device)
 ```
 
-### Step 2. Specifying logical contraints (as DFAs)
+### Step 2. Specifying logical constraints (as DFAs)
 
 ```python
 prefix_ids = tokenizer.encode(' on a fine sunny') # generate text starting with ' on a fine sunny'
