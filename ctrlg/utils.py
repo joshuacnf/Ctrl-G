@@ -1,4 +1,5 @@
 import torch
+import numpy as np
 from transformers import LogitsProcessor
 
 torch.set_float32_matmul_precision('high')
@@ -390,3 +391,15 @@ def rank_generated_ids(base_model, generated_ids, prompt_ids, suffix_ids,
         sorted([(x, y) for x,y in zip(generated_ids, log_probs.tolist())], key=lambda x: x[1], reverse=True)]
 
     return generated_ids_sorted
+
+def populate_edge(edge_vocab=[], vocab_size=0, tokenizer=None, ALL=False): #edge_vocab: list of all accepted words for that edge
+    if (ALL):
+        return np.ones((vocab_size,), dtype=bool)
+    else:
+        edge_set = np.zeros((vocab_size,), dtype=bool)
+        edge_tokens = []
+
+        for i in range(len(edge_vocab)):
+            edge_set[tokenizer.encode(edge_vocab[i], add_special_tokens=False)] = 1
+
+    return edge_set
