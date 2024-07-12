@@ -555,6 +555,10 @@ class EOSBuilder:
         return self.dfa_graph
 
 
+# Ad-hoc implementation of a DFA builder that counts the number of words.
+# Here each word is defined as some English characters (i.e. isalpha() gives True)
+# seperatred by a character from the sep list. If it does not work as you expected,
+# implement your custom WordCountBuilder with this implementation as a reference.
 class WordCountBuilder:
     def __init__(self, tokenizer, vocab_size, sep=[' ', '\n', ',', '.', ':', ';', '\"', '/']):
         all_special_ids = set(tokenizer.all_special_ids)
@@ -563,7 +567,14 @@ class WordCountBuilder:
             if token_id in all_special_ids:
                 vocab00[token_id] = 1
                 continue
-            token = tokenizer.decode([13, token_id])[1:]
+
+            # special handling for the Llama2 tokenizer; should also work with
+            # other tokenizers but not thoroughly tested. The logic here should
+            # be using tokenizer.decode(token_id) to convert each token_id to text,
+            # but the Llama2 tokenizer automatically removes the leading spaces.
+            token = tokenizer.decode([tokenizer.all_special_ids[0], token_id])
+            token = token[len(tokenizer.decode(tokenizer.all_special_ids[0])):]
+
             if token[0] in sep:
                 if any([c.isalpha() or c.isdigit() for c in token]):
                     vocab11[token_id] = 1
