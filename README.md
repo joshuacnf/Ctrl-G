@@ -148,7 +148,7 @@ for idx, generated in enumerate(generated_ids[:10]):
 ```
 
 
-## Upcoming: a user interface for interactive text editing
+## [_A user interface for interactive text editing_](https://billkunghappy.github.io/Ctrl-G/)
 <div style="text-align:center">
 <img src="https://web.cs.ucla.edu/~hzhang19/files/ctrlg_figures/ctrlg_ui.png"/>
 </div>
